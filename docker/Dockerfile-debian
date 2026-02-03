@@ -74,6 +74,10 @@ RUN /usr/local/bin/osrm-extract --help && \
     /usr/local/bin/osrm-partition --help && \
     /usr/local/bin/osrm-customize --help
 
+# Railway: bake in a tiny OSM extract so service can start without runtime download (e.g. if Geofabrik blocks egress)
+RUN curl -sLf -A "OSRM-DockerBuild/1.0" -o /opt/default-region.osm.pbf \
+    https://download.geofabrik.de/europe/monaco-latest.osm.pbf || rm -f /opt/default-region.osm.pbf
+
 # Railway: startup script (use OSRM_DATA_DIR=/data and mount volume for persistence)
 COPY scripts/railway-start.sh /opt/railway-start.sh
 RUN chmod +x /opt/railway-start.sh

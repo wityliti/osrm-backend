@@ -5,6 +5,7 @@ set -e
 DATA_DIR="${OSRM_DATA_DIR:-/data}"
 PROFILE="${OSRM_PROFILE:-car}"
 OSM_URL="${OSRM_OSM_URL:-https://download.geofabrik.de/europe/monaco-latest.osm.pbf}"
+OSM_URL_FALLBACK="${OSRM_OSM_URL_FALLBACK:-}"
 REGION_NAME="${OSRM_REGION_NAME:-region}"
 
 fail () {
@@ -24,8 +25,25 @@ prepare_data () {
   fi
   cd "$DATA_DIR" || fail "cannot cd to $DATA_DIR"
   echo "Step 1/4: Downloading OSM extract..."
-  if ! curl -sLf -o "${REGION_NAME}.osm.pbf" "$OSM_URL"; then
-    fail "curl download failed for $OSM_URL"
+  download_osm () {
+    curl -sLf --retry 2 --retry-delay 5 --retry-max-time 60 \
+      -A "OSRM-Railway/1.0 (https://github.com/Project-OSRM/osrm-backend)" \
+      --connect-timeout 30 --max-time 300 \
+      -o "${REGION_NAME}.osm.pbf" "$1"
+  }
+  if ! download_osm "$OSM_URL"; then
+    if [ -n "$OSM_URL_FALLBACK" ]; then
+      echo "Primary URL failed, trying fallback: $OSM_URL_FALLBACK"
+      if ! download_osm "$OSM_URL_FALLBACK"; then
+        try_baked_in
+      fi
+    else
+      try_baked_in
+    fi
+  fi
+  if ! [ -f "${REGION_NAME}.osm.pbf" ]; then
+    CODE=$(curl -sL -o /dev/null -w '%{http_code}' --connect-timeout 10 -A "OSRM-Railway/1.0" "$OSM_URL" 2>/dev/null || echo "unknown")
+    fail "curl download failed for $OSM_URL (HTTP $CODE). No fallback. Set OSRM_OSM_URL_FALLBACK or check network egress."
   fi
   echo "Step 2/4: Running osrm-extract (this may take a few minutes)..."
   if ! /usr/local/bin/osrm-extract -p "/opt/${PROFILE}.lua" "${REGION_NAME}.osm.pbf"; then
@@ -40,6 +58,16 @@ prepare_data () {
     fail "osrm-customize failed (check logs above)"
   fi
   echo "Data ready. Starting routing engine."
+}
+
+try_baked_in () {
+  if [ -f /opt/default-region.osm.pbf ]; then
+    echo "Using baked-in Monaco extract (runtime download failed)."
+    cp /opt/default-region.osm.pbf "${REGION_NAME}.osm.pbf"
+  else
+    CODE=$(curl -sL -o /dev/null -w '%{http_code}' --connect-timeout 10 -A "OSRM-Railway/1.0" "$OSM_URL" 2>/dev/null || echo "unknown")
+    fail "curl download failed for $OSM_URL (HTTP $CODE). Set OSRM_OSM_URL_FALLBACK or check network egress."
+  fi
 }
 
 # Find existing .osrm base (file named exactly *.osrm, not *.osrm.xxx)
