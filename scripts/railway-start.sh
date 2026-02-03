@@ -8,12 +8,24 @@ OSM_URL="${OSRM_OSM_URL:-https://download.geofabrik.de/europe/monaco-latest.osm.
 REGION_NAME="${OSRM_REGION_NAME:-region}"
 
 prepare_data () {
-  echo "No OSRM data in $DATA_DIR. Downloading OSM extract and processing (profile=$PROFILE)..."
-  cd "$DATA_DIR"
-  curl -sL -o "${REGION_NAME}.osm.pbf" "$OSM_URL"
-  /usr/local/bin/osrm-extract -p "/opt/${PROFILE}.lua" "${REGION_NAME}.osm.pbf"
-  /usr/local/bin/osrm-partition "${REGION_NAME}.osrm"
-  /usr/local/bin/osrm-customize "${REGION_NAME}.osrm"
+  echo "No OSRM data in $DATA_DIR. Preparing (profile=$PROFILE, url=$OSM_URL)..."
+  cd "$DATA_DIR" || { echo "Failed: cannot cd to $DATA_DIR"; exit 1; }
+  echo "Step 1/4: Downloading OSM extract..."
+  if ! curl -sLf -o "${REGION_NAME}.osm.pbf" "$OSM_URL"; then
+    echo "Failed: curl download failed for $OSM_URL"; exit 1
+  fi
+  echo "Step 2/4: Running osrm-extract (this may take a few minutes)..."
+  if ! /usr/local/bin/osrm-extract -p "/opt/${PROFILE}.lua" "${REGION_NAME}.osm.pbf"; then
+    echo "Failed: osrm-extract failed"; exit 1
+  fi
+  echo "Step 3/4: Running osrm-partition..."
+  if ! /usr/local/bin/osrm-partition "${REGION_NAME}.osrm"; then
+    echo "Failed: osrm-partition failed"; exit 1
+  fi
+  echo "Step 4/4: Running osrm-customize..."
+  if ! /usr/local/bin/osrm-customize "${REGION_NAME}.osrm"; then
+    echo "Failed: osrm-customize failed"; exit 1
+  fi
   echo "Data ready. Starting routing engine."
 }
 
