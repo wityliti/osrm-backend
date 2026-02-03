@@ -7,24 +7,37 @@ PROFILE="${OSRM_PROFILE:-car}"
 OSM_URL="${OSRM_OSM_URL:-https://download.geofabrik.de/europe/monaco-latest.osm.pbf}"
 REGION_NAME="${OSRM_REGION_NAME:-region}"
 
+fail () {
+  echo "Failed: $1"
+  echo "Waiting 30s before exit so logs are visible..."
+  sleep 30
+  exit 1
+}
+
 prepare_data () {
   echo "No OSRM data in $DATA_DIR. Preparing (profile=$PROFILE, url=$OSM_URL)..."
-  cd "$DATA_DIR" || { echo "Failed: cannot cd to $DATA_DIR"; exit 1; }
+  if ! [ -d "$DATA_DIR" ]; then
+    mkdir -p "$DATA_DIR" || fail "cannot create $DATA_DIR"
+  fi
+  if ! [ -w "$DATA_DIR" ]; then
+    fail "directory $DATA_DIR is not writable. Set RAILWAY_RUN_UID=0 in Variables."
+  fi
+  cd "$DATA_DIR" || fail "cannot cd to $DATA_DIR"
   echo "Step 1/4: Downloading OSM extract..."
   if ! curl -sLf -o "${REGION_NAME}.osm.pbf" "$OSM_URL"; then
-    echo "Failed: curl download failed for $OSM_URL"; exit 1
+    fail "curl download failed for $OSM_URL"
   fi
   echo "Step 2/4: Running osrm-extract (this may take a few minutes)..."
   if ! /usr/local/bin/osrm-extract -p "/opt/${PROFILE}.lua" "${REGION_NAME}.osm.pbf"; then
-    echo "Failed: osrm-extract failed"; exit 1
+    fail "osrm-extract failed (check logs above)"
   fi
   echo "Step 3/4: Running osrm-partition..."
   if ! /usr/local/bin/osrm-partition "${REGION_NAME}.osrm"; then
-    echo "Failed: osrm-partition failed"; exit 1
+    fail "osrm-partition failed (check logs above)"
   fi
   echo "Step 4/4: Running osrm-customize..."
   if ! /usr/local/bin/osrm-customize "${REGION_NAME}.osrm"; then
-    echo "Failed: osrm-customize failed"; exit 1
+    fail "osrm-customize failed (check logs above)"
   fi
   echo "Data ready. Starting routing engine."
 }
