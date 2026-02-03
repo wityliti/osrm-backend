@@ -52,6 +52,7 @@ COPY --from=builder /opt /opt
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
+        awscli \
         curl \
         expat \
         libboost-date-time1.81.0 \
@@ -62,6 +63,7 @@ RUN apt-get update && \
         libtbb12 && \
     rm -rf /var/lib/apt/lists/* && \
     ldconfig /usr/local/lib
+
 
 # Optional: compatibility symlink for libtbbmalloc_proxy.so.2 (Debian has .so.12)
 RUN for d in /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do \

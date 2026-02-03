@@ -25,11 +25,59 @@ prepare_data () {
   fi
   cd "$DATA_DIR" || fail "cannot cd to $DATA_DIR"
   echo "Step 1/4: Downloading OSM extract..."
+  
+  # S3 bucket download function (for Railway Storage Buckets)
+  download_from_s3 () {
+    local url="$1"
+    local bucket_name=""
+    local object_key=""
+    
+    # Extract bucket and key from various URL formats
+    # Format: https://<bucket>.storage.railway.app/<key>
+    if echo "$url" | grep -q 'storage\.railway\.app'; then
+      bucket_name=$(echo "$url" | sed -n 's|https://\([^.]*\)\.storage\.railway\.app.*|\1|p')
+      object_key=$(echo "$url" | sed -n 's|https://[^/]*/\(.*\)|\1|p')
+    fi
+    
+    if [ -z "$bucket_name" ] || [ -z "$object_key" ]; then
+      echo "Could not parse S3 bucket URL: $url"
+      return 1
+    fi
+    
+    echo "Downloading from S3 bucket: $bucket_name, key: $object_key"
+    
+    # Use aws CLI if available
+    if command -v aws >/dev/null 2>&1; then
+      AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-$ACCESS_KEY_ID}" \
+      AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-$SECRET_ACCESS_KEY}" \
+      AWS_REGION="${AWS_REGION:-${REGION:-auto}}" \
+      aws s3 cp "s3://${bucket_name}/${object_key}" "${REGION_NAME}.osm.pbf" \
+        --endpoint-url "https://storage.railway.app"
+    else
+      # Fallback: generate presigned-like request using curl with AWS Signature
+      echo "aws CLI not available, trying direct S3 request..."
+      # For Railway buckets, we need to use virtual-hosted style
+      curl -sLf --retry 2 --retry-delay 5 --retry-max-time 60 \
+        --connect-timeout 30 --max-time 600 \
+        -H "Authorization: AWS4-HMAC-SHA256 ..." \
+        -o "${REGION_NAME}.osm.pbf" "$url"
+    fi
+  }
+  
   download_osm () {
-    curl -sLf --retry 2 --retry-delay 5 --retry-max-time 60 \
-      -A "OSRM-Railway/1.0 (https://github.com/Project-OSRM/osrm-backend)" \
-      --connect-timeout 30 --max-time 300 \
-      -o "${REGION_NAME}.osm.pbf" "$1"
+    local url="$1"
+    
+    # Check if this is a Railway bucket URL and we have S3 credentials
+    if echo "$url" | grep -q 'storage\.railway\.app' && [ -n "${AWS_ACCESS_KEY_ID:-$ACCESS_KEY_ID}" ]; then
+      echo "Detected Railway bucket URL, using S3 authentication..."
+      download_from_s3 "$url"
+    else
+      # Standard HTTP download for public URLs (e.g., Geofabrik)
+      curl -sLf --retry 2 --retry-delay 5 --retry-max-time 60 \
+        -A "OSRM-Railway/1.0 (https://github.com/Project-OSRM/osrm-backend)" \
+        --connect-timeout 30 --max-time 600 \
+        -o "${REGION_NAME}.osm.pbf" "$url"
+    fi
   }
   if ! download_osm "$OSM_URL"; then
     if [ -n "$OSM_URL_FALLBACK" ]; then
