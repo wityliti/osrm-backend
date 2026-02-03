@@ -62,11 +62,11 @@ prepare_data () {
 
 try_baked_in () {
   if [ -f /opt/default-region.osm.pbf ]; then
-    echo "Using baked-in Monaco extract (runtime download failed)."
+    echo "Using baked-in Monaco extract (runtime download failed - network egress may be blocked)."
     cp /opt/default-region.osm.pbf "${REGION_NAME}.osm.pbf"
   else
     CODE=$(curl -sL -o /dev/null -w '%{http_code}' --connect-timeout 10 -A "OSRM-Railway/1.0" "$OSM_URL" 2>/dev/null || echo "unknown")
-    fail "curl download failed for $OSM_URL (HTTP $CODE). Set OSRM_OSM_URL_FALLBACK or check network egress."
+    fail "curl download failed for $OSM_URL (HTTP $CODE). Set OSRM_OSM_URL_FALLBACK to a URL you control (e.g. bucket) or check network egress."
   fi
 }
 
