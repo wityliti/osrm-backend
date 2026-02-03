@@ -52,6 +52,7 @@ COPY --from=builder /opt /opt
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
+        curl \
         expat \
         libboost-date-time1.81.0 \
         libboost-iostreams1.81.0 \
@@ -61,7 +62,11 @@ RUN apt-get update && \
         libtbb12 && \
     rm -rf /var/lib/apt/lists/* && \
 # Add /usr/local/lib to ldconfig to allow loading libraries from there
-    ldconfig /usr/local/lib
+    ldconfig /usr/local/lib && \
+# Compatibility: some linkers expect libtbbmalloc_proxy.so.2 (Debian has .so.12)
+    (for d in /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do \
+       [ -f "$$d/libtbbmalloc_proxy.so.12" ] && [ ! -f "$$d/libtbbmalloc_proxy.so.2" ] && ln -s "$$d/libtbbmalloc_proxy.so.12" "$$d/libtbbmalloc_proxy.so.2"; done) && \
+    ldconfig
 
 RUN /usr/local/bin/osrm-extract --help && \
     /usr/local/bin/osrm-routed --help && \
@@ -69,6 +74,12 @@ RUN /usr/local/bin/osrm-extract --help && \
     /usr/local/bin/osrm-partition --help && \
     /usr/local/bin/osrm-customize --help
 
-WORKDIR /opt
+# Railway: startup script (use OSRM_DATA_DIR=/data and mount volume for persistence)
+COPY scripts/railway-start.sh /opt/railway-start.sh
+RUN chmod +x /opt/railway-start.sh
+
+RUN mkdir -p /data
+WORKDIR /data
 
 EXPOSE 5000
+CMD ["/opt/railway-start.sh"]
